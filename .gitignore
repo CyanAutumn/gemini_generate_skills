@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+outputs/
+.runtime/
+profiles/
+playwright/.auth/
+state.json
+.env
