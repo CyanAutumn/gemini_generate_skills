@@ -74,9 +74,21 @@ class WorkflowCLITests(unittest.TestCase):
         self.assertEqual(self.command("plan", "sample", "--params-file", str(parameters),
                                       "--set", "subject=override cat"), 0)
         plan = self.emit.call_args.kwargs["plan"]
-        self.assertEqual(plan["parameters"], {"subject": "override cat", "style": "ink"})
+        self.assertEqual(plan["parameters"], {"extra_requirements": "", "subject": "override cat", "style": "ink"})
         self.assertEqual(plan["steps"][0]["prompt"], "Draw override cat in ink")
         self.browser.assert_not_called()
+
+    def test_extra_requirements_from_params_file_can_be_overridden_in_dry_run(self):
+        self.create()
+        parameters = self.root / "parameters.json"
+        write_json(parameters, {"subject": "cat", "extra_requirements": "旧条件"})
+        self.assertEqual(self.command("run", "sample", "--dry-run", "--params-file", str(parameters),
+                                      "--set", "extra_requirements=不要文字"), 0)
+        plan = self.emit.call_args.kwargs["plan"]
+        self.assertEqual(plan["parameters"]["extra_requirements"], "不要文字")
+        self.assertTrue(plan["steps"][0]["prompt"].endswith("附加要求：\n不要文字"))
+        self.browser.assert_not_called()
+        self.runner_browser.assert_not_called()
 
     def test_duplicate_set_assignments_are_rejected_without_browser(self):
         self.create()

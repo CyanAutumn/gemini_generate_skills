@@ -67,7 +67,7 @@ class WorkflowConfigTests(unittest.TestCase):
     def test_plan_renders_required_defaults_and_prior_image_reference(self):
         self.create()
         plan = self.store.load("demo").plan({"主题": "一只猫"})
-        self.assertEqual(plan["parameters"], {"主题": "一只猫", "风格": "水彩"})
+        self.assertEqual(plan["parameters"], {"extra_requirements": "", "主题": "一只猫", "风格": "水彩"})
         self.assertEqual(plan["steps"][0]["prompt"], "画一只猫，采用水彩风格")
         self.assertEqual(plan["steps"][1]["references"], [{"step": "picture", "file_index": 0}])
         reference = plan["steps"][0]["references"][0]
@@ -80,6 +80,61 @@ class WorkflowConfigTests(unittest.TestCase):
         for result in [created, definition.validate(), definition.plan({"主题": "cat"}), self.store.list()]:
             encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
             self.assertTrue(encoded)
+
+    def test_extra_requirements_apply_to_every_step_without_editing_legacy_manifest(self):
+        self.create()
+        definition = self.store.load("demo")
+        definition.manifest["variables"].pop("extra_requirements")
+        before = copy.deepcopy(definition.manifest)
+        original = definition.plan({"主题": "猫"})
+        plan = definition.plan({"主题": "猫", "extra_requirements": " 不要文字\n保持人物一致 "})
+        for base, step in zip(original["steps"], plan["steps"]):
+            self.assertEqual(step["prompt"], base["prompt"] + "\n\n附加要求：\n不要文字\n保持人物一致")
+        self.assertEqual(definition.manifest, before)
+
+    def test_extra_requirements_placeholder_is_rendered_once_and_values_are_literal(self):
+        spec = self.spec()
+        spec["steps"][0]["prompt"] += "；附加：{{ extra_requirements }}"
+        self.create(spec)
+        plan = self.store.load("demo").plan({"主题": "猫", "extra_requirements": "保留{{主题}}字样"})
+        self.assertEqual(plan["steps"][0]["prompt"].count("保留{{主题}}字样"), 1)
+        self.assertNotIn("\n\n附加要求：", plan["steps"][0]["prompt"])
+        self.assertTrue(plan["steps"][1]["prompt"].endswith("保留{{主题}}字样"))
+
+    def test_extra_requirements_empty_values_leave_prompts_unchanged_and_types_are_strict(self):
+        self.create()
+        definition = self.store.load("demo")
+        original = definition.plan({"主题": "猫"})["steps"]
+        for value in ["", " \t\n"]:
+            self.assertEqual(definition.plan({"主题": "猫", "extra_requirements": value})["steps"], original)
+        for value in [True, 1, None, []]:
+            with self.subTest(value=value), self.assertRaises(WorkflowError):
+                definition.plan({"主题": "猫", "extra_requirements": value})
+
+    def test_extra_requirements_do_not_hide_blank_base_prompt(self):
+        spec = {"schema_version": 1, "variables": {"text": ""},
+                "steps": [{"id": "image", "type": "image", "prompt": "{{text}}"}]}
+        self.create(spec)
+        with self.assertRaisesRegex(WorkflowError, "渲染后的提示词不能为空"):
+            self.store.load("demo").plan({"extra_requirements": "不要文字"})
+
+    def test_extra_requirements_default_is_applied_and_can_be_disabled(self):
+        spec = self.spec()
+        spec["variables"]["extra_requirements"] = "保持角色一致"
+        self.create(spec)
+        definition = self.store.load("demo")
+        for step in definition.plan({"主题": "猫"})["steps"]:
+            self.assertTrue(step["prompt"].endswith("附加要求：\n保持角色一致"))
+        for step in definition.plan({"主题": "猫", "extra_requirements": ""})["steps"]:
+            self.assertNotIn("附加要求：", step["prompt"])
+
+    def test_extra_requirements_non_string_defaults_are_rejected_before_creation(self):
+        for value in [None, True, 2, [], {}]:
+            spec = self.spec()
+            spec["variables"]["extra_requirements"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(WorkflowError, "默认值必须是字符串"):
+                self.create(spec)
+            self.assertFalse(self.workflows.exists())
 
     def test_chinese_underscore_and_scalar_defaults_are_rendered_without_evaluation(self):
         spec = {"schema_version": 1, "variables": {"主题_1": "森林", "_风格": "水彩", "数量": 3,

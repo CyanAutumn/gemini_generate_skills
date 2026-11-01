@@ -122,6 +122,15 @@ $cli = (Resolve-Path .\gemini-browser\scripts\gemini_browser.py).Path
 & $py $cli workflow run product-demo --set "subject=陶瓷咖啡杯" --set "color=浅绿色"
 ```
 
+临时附加条件使用内置的可选字符串参数，无需修改已有工作流：
+
+```powershell
+& $py $cli workflow plan product-demo --set "subject=陶瓷咖啡杯" --set "extra_requirements=不要文字，保持杯子造型一致"
+& $py $cli workflow run product-demo --set "subject=陶瓷咖啡杯" --set "extra_requirements=不要文字，保持杯子造型一致"
+```
+
+条件会追加到每一步提示词；模板已有 `{{extra_requirements}}` 时原位替换，不重复追加。默认不附加，支持 JSON 参数文件和字符串默认值。只针对某一步的条件应调整该步模板。Agent 会整理用户补充要求，并在计划中检查最终提示词。
+
 工作流按顺序执行，每一步下载校验通过且聊天删除确认后才进入下一步；失败立即停止，不自动重试，也不在旧聊天中继续。已完成的本地文件和运行记录会保留。
 
 ### 自定义 JSON

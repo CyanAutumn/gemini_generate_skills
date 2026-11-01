@@ -113,6 +113,9 @@ def _analyse(manifest: Any, name: str, directory: Path, *, source=False) -> dict
     variables = manifest.get("variables", {})
     if not isinstance(variables, dict):
         raise WorkflowError("variables 必须是对象")
+    variables = {"extra_requirements": "", **variables}
+    if not isinstance(variables["extra_requirements"], str):
+        raise WorkflowError("extra_requirements 的默认值必须是字符串")
     for key, value in variables.items():
         if not isinstance(key, str) or not key.isidentifier():
             raise WorkflowError(f"变量名必须是中文、字母或下划线开头的标识符：{key}")
@@ -218,11 +221,18 @@ class WorkflowDefinition:
             if key not in parameters and default is None:
                 raise WorkflowError(f"缺少必填参数：{key}")
             resolved[key] = _scalar(parameters.get(key, default), f"参数 {key}")
+        extra = resolved["extra_requirements"]
+        if not isinstance(extra, str):
+            raise WorkflowError("extra_requirements 必须是字符串")
         steps = []
         for step in checked["steps"]:
             prompt = _render(step["prompt"], resolved)
             if not prompt.strip():
                 raise WorkflowError(f"步骤 {step['id']} 渲染后的提示词不能为空")
+            has_extra_placeholder = any(match.group(1).strip() == "extra_requirements"
+                                        for match in _TEMPLATE.finditer(step["prompt"]))
+            if extra.strip() and not has_extra_placeholder:
+                prompt += "\n\n附加要求：\n" + extra.strip()
             references = [dict(reference["metadata"]) if "metadata" in reference else dict(reference)
                           for reference in step["references"]]
             steps.append({**step, "prompt": prompt, "references": references})

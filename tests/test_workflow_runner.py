@@ -143,6 +143,13 @@ class WorkflowRunnerTests(unittest.TestCase):
         self.assertEqual([event.args[0] for event in self.emit.call_args_list].count("workflow_step_started"), 2)
         self.assertEqual(self.emit.call_args_list[-1].args[0], "workflow_succeeded")
 
+    def test_extra_requirements_reach_both_drivers_and_are_saved_in_records(self):
+        result = self.runner.run({"subject": "cat", "extra_requirements": "不要文字"})
+        self.assertEqual(result["parameters"]["extra_requirements"], "不要文字")
+        for call, step in zip(self.calls, result["steps"]):
+            self.assertTrue(call["prompt"].endswith("附加要求：\n不要文字"))
+            self.assertEqual(read_json(step["task_record"])["prompt"], call["prompt"])
+
     def test_driver_failure_is_not_retried_and_retains_prior_output(self):
         failure = RuntimeError("mock video generation failed")
         self.actions["motion"] = failure
