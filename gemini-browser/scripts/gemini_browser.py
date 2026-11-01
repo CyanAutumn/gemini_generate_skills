@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import sys
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from browser_session import BrowserSession, LoginRequired, emit, redact
 from playwright.sync_api import Error as BrowserError
-from local_state import RunStore, default_data_dir, utc_now, verify_image, write_json
+from local_state import RunStore, default_data_dir, utc_now, verify_image, verify_saved_files, write_json
 
 
 def common(parser, *, root=False):
@@ -75,8 +76,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.profile):
         parser.error("--profile 只能包含字母、数字、下划线、短横线，最多 64 个字符")
-    if hasattr(args, "timeout") and args.timeout <= 0:
-        parser.error("--timeout 必须大于 0")
+    if hasattr(args, "timeout") and (not math.isfinite(args.timeout) or args.timeout <= 0):
+        parser.error("--timeout 必须是有限正数")
     args.data_dir = args.data_dir.expanduser().resolve()
     args.output_dir = args.output_dir.expanduser().resolve()
     args.workflows_dir = args.workflows_dir.expanduser().resolve()
@@ -103,9 +104,8 @@ def main(argv=None):
             if args.command == "result":
                 if not record.get("files"):
                     raise ValueError("该任务没有已保存的本地图片或视频；result 不会打开网页或重新生成。")
-                from local_state import verify_media
                 media_type = record.get("media_type", "image")
-                files = [verify_media(f["path"], media_type) for f in record["files"]]
+                files = verify_saved_files(record["files"], media_type)
                 emit("result", run_id=record["id"], files=files,
                      media_type=media_type, status=record["status"],
                      chat_cleanup=record.get("chat_cleanup"), local_only=True)

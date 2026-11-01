@@ -345,3 +345,14 @@ def verify_media(path: str | os.PathLike[str], media_type: str | None = None) ->
     except (OSError, ValueError):
         return verify_video(path)
     return {**verify_image(path), "media_type": "image"}
+
+
+def verify_saved_files(files: list[dict[str, Any]], media_type: str) -> list[dict[str, Any]]:
+    """Revalidate saved media and match recorded hashes when available."""
+    checked_files = []
+    for file in files:
+        checked = verify_media(file["path"], media_type)
+        if file.get("sha256") and file["sha256"] != checked["sha256"]:
+            raise ValueError(f"本地文件已改变：{Path(file['path']).name}")
+        checked_files.append(checked)
+    return checked_files

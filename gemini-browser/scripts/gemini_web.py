@@ -6,7 +6,7 @@ import re
 import time
 from contextlib import suppress
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from playwright.sync_api import TimeoutError as BrowserTimeoutError
 
@@ -438,6 +438,16 @@ class GeminiImages:
         row.hover()
         container = row
         for _ in range(3):
+            hrefs = container.evaluate(
+                "e => [e, ...e.querySelectorAll('a[href]')]"
+                ".filter(n => n.matches('a[href]')).map(n => n.getAttribute('href'))"
+            )
+            chat_links = [urljoin(record["chat_url"], href) for href in hrefs if href]
+            chat_links = [url for url in chat_links if self._is_chat_url(url)]
+            # A sidebar/list ancestor may also contain a different chat's More
+            # button. Never inspect its controls beyond the unique target row.
+            if len(chat_links) != 1 or not self._same_chat(chat_links[0], record["chat_url"]):
+                break
             buttons = [b for b in container.get_by_role("button", name=MORE).all() if b.is_visible()]
             if len(buttons) == 1:
                 buttons[0].click()

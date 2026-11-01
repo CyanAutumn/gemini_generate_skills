@@ -8,7 +8,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from browser_session import BrowserSession, emit, redact
-from local_state import RunStore, read_json, utc_now, verify_image, verify_media, write_json
+from local_state import RunStore, read_json, utc_now, verify_image, verify_saved_files, write_json
 
 
 def workflow_record_path(output_dir, run_id):
@@ -24,10 +24,7 @@ def load_workflow_result(output_dir, run_id, verify=True):
         raise ValueError("工作流运行记录与 ID 不匹配")
     if verify:
         for step in record.get("steps", []):
-            for file in step.get("files", []):
-                checked = verify_media(file["path"], step["type"])
-                if file.get("sha256") and checked["sha256"] != file["sha256"]:
-                    raise ValueError(f"步骤 {step['id']} 的本地文件已改变")
+            verify_saved_files(step.get("files", []), step["type"])
     return record
 
 
@@ -126,10 +123,7 @@ class WorkflowRunner:
                         raise RuntimeError(f"步骤 {step['id']} 的聊天尚未确认删除，已停止后续步骤")
                     if not active_task.get("files"):
                         raise RuntimeError(f"步骤 {step['id']} 没有输出文件")
-                    files = [verify_media(file["path"], step["type"]) for file in active_task["files"]]
-                    for original, checked in zip(active_task["files"], files):
-                        if original.get("sha256") and original["sha256"] != checked["sha256"]:
-                            raise ValueError(f"步骤 {step['id']} 的输出在校验前发生变化")
+                    files = verify_saved_files(active_task["files"], step["type"])
                     active_entry.update(status="succeeded", files=files)
                     completed[step["id"]] = files
                     self.last_record["files"] = files

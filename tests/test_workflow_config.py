@@ -103,6 +103,18 @@ class WorkflowConfigTests(unittest.TestCase):
                 with self.assertRaises(WorkflowError):
                     definition.plan(parameters)
 
+    def test_rendered_prompt_must_not_be_blank_and_preserves_valid_whitespace(self):
+        spec = {"schema_version": 1, "variables": {"text": ""},
+                "steps": [{"id": "image", "type": "image", "prompt": "{{text}}"}]}
+        self.create(spec)
+        definition = self.store.load("demo")
+        for parameters in [None, {"text": ""}, {"text": " \t\r\n"}]:
+            with self.subTest(parameters=parameters):
+                with self.assertRaisesRegex(WorkflowError, "渲染后的提示词不能为空"):
+                    definition.plan(parameters)
+        prompt = " \tDraw a cat\r\n"
+        self.assertEqual(definition.plan({"text": prompt})["steps"][0]["prompt"], prompt)
+
     def test_unknown_or_malformed_template_is_rejected_before_writing(self):
         for template in ["{{未声明}}", "{{主题.foo}}", "{{主题", "{{}}", "{{{{主题}}}}"]:
             with self.subTest(template=template):
@@ -205,6 +217,13 @@ class WorkflowConfigTests(unittest.TestCase):
         spec["steps"][1].pop("references")
         with self.assertRaisesRegex(WorkflowError, "至少"):
             self.create(spec)
+
+    def test_case_insensitive_step_ids_are_rejected_before_creating_directory(self):
+        spec = self.spec()
+        spec["steps"][1]["id"] = "PICTURE"
+        with self.assertRaisesRegex(WorkflowError, "步骤 id 重复"):
+            self.create(spec)
+        self.assertFalse(self.workflows.exists())
 
     def test_unknown_fields_are_rejected_at_every_schema_level(self):
         for target in ["root", "step", "reference"]:

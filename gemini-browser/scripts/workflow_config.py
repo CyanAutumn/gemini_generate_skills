@@ -121,13 +121,14 @@ def _analyse(manifest: Any, name: str, directory: Path, *, source=False) -> dict
     if not isinstance(raw_steps, list) or not raw_steps:
         raise WorkflowError("steps 必须是非空步骤列表")
     seen: dict[str, str] = {}
+    seen_casefold: set[str] = set()
     steps = []
     for index, raw in enumerate(raw_steps, 1):
         label = f"步骤{index}"
         _keys(raw, _STEP_KEYS, label)
         step_id = _name(raw.get("id"), f"{label} id")
         label = f"步骤 {step_id}"
-        if step_id in seen:
+        if step_id.casefold() in seen_casefold:
             raise WorkflowError(f"步骤 id 重复：{step_id}")
         media_type = raw.get("type")
         if not isinstance(media_type, str) or media_type not in {"image", "video"}:
@@ -175,6 +176,7 @@ def _analyse(manifest: Any, name: str, directory: Path, *, source=False) -> dict
                       "references": prepared_references,
                       "timeout": _timeout(raw.get("timeout", 600 if media_type == "video" else 300), f"{label} timeout")})
         seen[step_id] = media_type
+        seen_casefold.add(step_id.casefold())
     return {"schema_version": 1, "name": name, "description": description,
             "variables": dict(variables), "steps": steps}
 
@@ -218,9 +220,12 @@ class WorkflowDefinition:
             resolved[key] = _scalar(parameters.get(key, default), f"参数 {key}")
         steps = []
         for step in checked["steps"]:
+            prompt = _render(step["prompt"], resolved)
+            if not prompt.strip():
+                raise WorkflowError(f"步骤 {step['id']} 渲染后的提示词不能为空")
             references = [dict(reference["metadata"]) if "metadata" in reference else dict(reference)
                           for reference in step["references"]]
-            steps.append({**step, "prompt": _render(step["prompt"], resolved), "references": references})
+            steps.append({**step, "prompt": prompt, "references": references})
         return {"name": self.name, "directory": str(Path(self.directory).resolve()),
                 "parameters": resolved, "steps": steps}
 

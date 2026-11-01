@@ -101,6 +101,16 @@ class WorkflowRunnerTests(unittest.TestCase):
             self.runner.run({"subject": "cat", "unexpected": "value"})
         self.assert_no_browser_or_output()
 
+    def test_blank_later_prompt_fails_before_browser_or_output_creation(self):
+        later_step = self.definition.manifest["steps"][1]
+        prompt_path = self.definition.directory / later_step["prompt_file"]
+        prompt_path.write_text("{{subject}}", encoding="utf-8")
+        for subject in ["", " \t\r\n"]:
+            with self.subTest(subject=subject):
+                with self.assertRaisesRegex(WorkflowError, "步骤 motion 渲染后的提示词不能为空"):
+                    self.runner.run({"subject": subject})
+                self.assert_no_browser_or_output()
+
     def test_missing_fixed_reference_is_preflighted_before_browser(self):
         (self.definition.directory / "assets" / "still-1.png").unlink()
         with self.assertRaisesRegex(WorkflowError, "文件不存在"):

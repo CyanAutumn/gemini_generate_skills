@@ -69,12 +69,21 @@ class BrowserSession:
             self.lock.__exit__(None, None, None)
             raise
 
-    def __exit__(self, *exc):
+    def __exit__(self, exc_type, exc_value, traceback):
         try:
             if self.context:
-                self.context.close()
+                try:
+                    self.context.close()
+                except BaseException as close_error:
+                    if exc_type is None:
+                        raise
+                    # Preserve the operation's exception and interruption status.
+                    # Reporting a secondary teardown failure must not replace it.
+                    with suppress(BaseException):
+                        emit("browser_close_failed", error_type=type(close_error).__name__,
+                             message=redact(str(close_error)))
         finally:
-            self.lock.__exit__(*exc)
+            self.lock.__exit__(exc_type, exc_value, traceback)
 
     def navigate(self, url=GEMINI_URL):
         self.page.goto(url, wait_until="domcontentloaded", timeout=60000)

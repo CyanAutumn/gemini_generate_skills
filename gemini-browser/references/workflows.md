@@ -16,6 +16,8 @@ python gemini-browser/scripts/gemini_browser.py workflow run --help
 
 当前 `schema_version` 为 `1`。只支持顺序的 `image` 和 `video` 步骤；不支持循环、条件、批量或调度。提示词与固定参考图相对规范文件所在目录组织，创建时会复制成可搬移的包，登录态不属于包内容。
 
+步骤 `id` 不能重复，也不能仅以大小写区分，避免在 Windows 打包时覆盖素材或提示词；步骤引用仍按原始 `id` 精确匹配。参数替换后的每一步提示词必须包含非空白内容，否则预检会在打开浏览器前停止。
+
 项目附带 `gemini-browser/examples/workflows/product-demo/`，结构如下：
 
 ```text

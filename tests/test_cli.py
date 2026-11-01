@@ -106,6 +106,42 @@ class CLITests(unittest.TestCase):
         driver.assert_not_called()
         self.assertEqual(RunStore(self.output_dir).load(record["id"]), record)
 
+    def test_result_rejects_replaced_valid_image_without_mutating_record(self):
+        record = self.saved_image_record()
+        Image.new("RGB", (12, 16), "blue").save(record["files"][0]["path"])
+        result, factory, driver, events = self.invoke([*self.options, "result", record["id"]])
+        self.assertEqual(result, 1)
+        self.assertIn("本地文件已改变", events.call_args.kwargs["message"])
+        factory.assert_not_called()
+        driver.assert_not_called()
+        self.assertEqual(RunStore(self.output_dir).load(record["id"]), record)
+
+    def test_result_accepts_legacy_file_record_without_hash(self):
+        record = self.saved_image_record()
+        record["files"][0].pop("sha256")
+        RunStore(self.output_dir).save(record)
+        result, factory, driver, events = self.invoke([*self.options, "result", record["id"]])
+        self.assertEqual(result, 0)
+        self.assertEqual(events.call_args.kwargs["files"][0]["sha256"],
+                         verify_image(record["files"][0]["path"])["sha256"])
+        factory.assert_not_called()
+        driver.assert_not_called()
+        self.assertEqual(RunStore(self.output_dir).load(record["id"]), record)
+
+    def test_invalid_timeouts_fail_before_browser_or_task_creation(self):
+        for command, extra in [("login", []), ("image", ["--prompt", "a cat"]),
+                               ("video", ["--prompt", "a cat", "--reference", "cat.png"])]:
+            for timeout in ["nan", "inf", "-inf", "0", "-1"]:
+                with self.subTest(command=command, timeout=timeout):
+                    factory = MagicMock()
+                    with patch("sys.stderr", new=io.StringIO()):
+                        with self.assertRaises(SystemExit) as raised:
+                            self.invoke([*self.options, command, *extra, f"--timeout={timeout}"],
+                                        session_factory=factory)
+                    self.assertEqual(raised.exception.code, 2)
+                    factory.assert_not_called()
+                    self.assertFalse(self.output_dir.exists())
+
     def test_cleanup_only_calls_cleanup_without_generating(self):
         record = self.saved_image_record()
         driver = MagicMock()

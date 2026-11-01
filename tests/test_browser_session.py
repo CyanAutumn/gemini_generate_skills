@@ -99,6 +99,52 @@ class BrowserSessionTests(unittest.TestCase):
             self.session.__exit__(None, None, None)
         self.session.lock.__exit__.assert_called_once_with(None, None, None)
 
+    def test_close_failure_preserves_primary_exception_and_redacts_secondary_event(self):
+        self.session.context = MagicMock()
+        self.session.lock = MagicMock()
+        secret = "private" + str(id(self))
+        self.session.context.close.side_effect = RuntimeError(
+            f"close failed https://example.invalid/asset?token={secret}"
+        )
+        primary = ValueError("generation failed")
+        with patch.object(browser_session.BrowserSession, "__enter__", return_value=self.session), \
+             patch.object(browser_session, "emit") as events:
+            with self.assertRaises(ValueError) as raised:
+                with self.session:
+                    raise primary
+        self.assertIs(raised.exception, primary)
+        self.assertEqual(events.call_args.args, ("browser_close_failed",))
+        self.assertFalse(secret in events.call_args.kwargs["message"], "关闭失败事件必须脱敏")
+        self.session.lock.__exit__.assert_called_once()
+        self.assertIs(self.session.lock.__exit__.call_args.args[1], primary)
+
+    def test_close_failure_does_not_replace_keyboard_interrupt(self):
+        self.session.context = MagicMock()
+        self.session.context.close.side_effect = RuntimeError("secondary close failure")
+        self.session.lock = MagicMock()
+        primary = KeyboardInterrupt()
+        with patch.object(browser_session.BrowserSession, "__enter__", return_value=self.session), \
+             patch.object(browser_session, "emit"):
+            with self.assertRaises(KeyboardInterrupt) as raised:
+                with self.session:
+                    raise primary
+        self.assertIs(raised.exception, primary)
+        self.session.context.close.assert_called_once()
+        self.session.lock.__exit__.assert_called_once()
+
+    def test_reporting_close_failure_cannot_replace_primary_exception(self):
+        self.session.context = MagicMock()
+        self.session.context.close.side_effect = RuntimeError("secondary close failure")
+        self.session.lock = MagicMock()
+        primary = ValueError("generation failed")
+        with patch.object(browser_session.BrowserSession, "__enter__", return_value=self.session), \
+             patch.object(browser_session, "emit", side_effect=OSError("output closed")):
+            with self.assertRaises(ValueError) as raised:
+                with self.session:
+                    raise primary
+        self.assertIs(raised.exception, primary)
+        self.session.lock.__exit__.assert_called_once()
+
     def other_page(self, url="https://gemini.google.com/app"):
         page = MagicMock()
         page.url = url

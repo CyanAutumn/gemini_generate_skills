@@ -215,6 +215,55 @@ class GeminiWebTests(unittest.TestCase):
             self.driver._validate_task_chat(self.record)
         self.page.get_by_role.assert_not_called()
 
+    def sidebar_menu_fixture(self, *, own_button=None):
+        self.owned_record()
+        self.page.get_by_role.return_value.all.return_value = []
+        link, own_row, shared_list, unrelated_button = [MagicMock() for _ in range(4)]
+        self.page.locator.return_value = link
+        link.count.return_value = 1
+        link.evaluate.return_value = ["/app/chat123"]
+        link.get_by_role.return_value.all.return_value = []
+        link.locator.return_value = own_row
+        own_row.evaluate.return_value = [self.record["chat_url"]]
+        own_row.get_by_role.return_value.all.return_value = [own_button] if own_button else []
+        own_row.locator.return_value = shared_list
+        shared_list.evaluate.return_value = ["/app/chat123", "/app/unrelated-chat"]
+        shared_list.get_by_role.return_value.all.return_value = [unrelated_button]
+        unrelated_button.is_visible.return_value = True
+        if own_button is not None:
+            own_button.is_visible.return_value = True
+        return link, own_row, shared_list, unrelated_button
+
+    def test_chat_without_own_menu_never_clicks_neighbor_menu_in_shared_list(self):
+        link, _, shared_list, unrelated_button = self.sidebar_menu_fixture()
+        with self.assertRaisesRegex(gemini_web.ChatCleanupError, "没有找到本任务聊天的菜单按钮"):
+            self.driver._open_chat_menu(self.record)
+        link.hover.assert_called_once()
+        shared_list.evaluate.assert_called_once()
+        shared_list.get_by_role.assert_not_called()
+        unrelated_button.click.assert_not_called()
+
+    def test_sidebar_menu_with_unique_target_row_still_opens_its_own_menu(self):
+        own_button = MagicMock()
+        _, _, shared_list, unrelated_button = self.sidebar_menu_fixture(own_button=own_button)
+        self.driver._open_chat_menu(self.record)
+        own_button.click.assert_called_once()
+        shared_list.evaluate.assert_not_called()
+        unrelated_button.click.assert_not_called()
+
+    def test_unique_chat_header_menu_does_not_require_sidebar_lookup(self):
+        header = MagicMock()
+        header.is_visible.return_value = True
+        menu_locator, header_locator = MagicMock(), MagicMock()
+        menu_locator.all.return_value = []
+        header_locator.all.return_value = [header]
+        self.page.get_by_role.side_effect = lambda role, **kwargs: (
+            menu_locator if role == "menu" else header_locator
+        )
+        self.driver._open_chat_menu(self.record)
+        header.click.assert_called_once()
+        self.page.locator.assert_not_called()
+
     def test_deleted_chat_requires_explicit_missing_notice_without_user_query(self):
         self.owned_record(status="succeeded")
         self.page.url = "https://gemini.google.com/app"
