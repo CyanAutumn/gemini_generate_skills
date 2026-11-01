@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -194,3 +195,153 @@ def verify_image(path: str | os.PathLike[str]) -> dict[str, Any]:
         }
     except (OSError, SyntaxError, EOFError, ValueError) as exc:
         raise ValueError(f"图片校验失败：{target.name}：{exc}") from exc
+
+
+def _video_container_name(container, prefix: bytes) -> str:
+    """Identify actual containers, never a filename extension or image decoder."""
+    names = set(container.format.name.split(","))
+    if names & {"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}:
+        brand = container.metadata.get("major_brand", "").strip().lower()
+        if brand in {"avif", "avis", "heic", "heix", "hevc", "hevx", "mif1", "msf1"}:
+            raise ValueError("文件是静态图片容器，不是视频")
+        return "MOV" if brand == "qt" else "MP4"
+    if names & {"matroska", "webm"}:
+        # EBML DocType (0x4282) is a short string in the container header.
+        offset = prefix.find(b"\x42\x82")
+        if offset >= 0 and offset + 2 < len(prefix):
+            first = prefix[offset + 2]
+            mask, length = 0x80, 1
+            while mask and not first & mask:
+                mask >>= 1
+                length += 1
+            if mask and offset + 2 + length <= len(prefix):
+                size = first & (mask - 1)
+                for value in prefix[offset + 3:offset + 2 + length]:
+                    size = (size << 8) | value
+                start = offset + 2 + length
+                if prefix[start:start + size].lower() == b"webm":
+                    return "WEBM"
+        return "MKV"
+    if "avi" in names:
+        return "AVI"
+    raise ValueError(f"不支持的视频容器：{container.format.name}")
+
+
+def verify_video(path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Fully decode local video streams and reject damaged or non-video files.
+
+    PyAV uses the locally installed FFmpeg libraries; this function neither
+    downloads a decoder nor opens remote media. Images, audio-only containers,
+    attached cover art and declared-but-missing video frames are not accepted.
+    """
+    target = Path(path).expanduser().resolve()
+    try:
+        import av
+    except ImportError as exc:
+        raise RuntimeError("视频校验需要 PyAV；请安装本 Skill requirements.txt 中的 av 依赖。") from exc
+    try:
+        initial_stat = target.stat()
+        if not target.is_file() or initial_stat.st_size == 0:
+            raise ValueError("视频文件为空或不是普通文件")
+        with target.open("rb") as source:
+            prefix = source.read(4096)
+            source.seek(0)
+            # Passing a local file object prevents the input from being treated
+            # as an FFmpeg URL. Only real video containers below are accepted.
+            with av.logging.Capture() as logs, av.open(
+                source, mode="r", options={"err_detect": "explode"},
+                container_options={"protocol_whitelist": "file,pipe"},
+            ) as container:
+                video_format = _video_container_name(container, prefix)
+                excluded = av.stream.Disposition.attached_pic | av.stream.Disposition.still_image
+                videos = [stream for stream in container.streams.video if not stream.disposition & excluded]
+                if not videos:
+                    raise ValueError("容器中没有可播放的视频流")
+                stats = {}
+                for stream in videos:
+                    stream.codec_context.options = {**stream.codec_context.options, "err_detect": "explode"}
+                    rate = float(stream.average_rate) if stream.average_rate else 0.0
+                    stats[stream.index] = {
+                        "frames": 0, "width": 0, "height": 0, "first": None, "last_end": None,
+                        "frame_duration": 1.0 / rate if rate > 0 else 0.0,
+                    }
+                for packet in container.demux(videos):
+                    if packet.is_corrupt:
+                        raise ValueError("视频包含损坏的数据包")
+                    for frame in packet.decode():
+                        stat = stats[packet.stream.index]
+                        if frame.width <= 0 or frame.height <= 0:
+                            raise ValueError("视频帧尺寸无效")
+                        stat["frames"] += 1
+                        stat["width"], stat["height"] = frame.width, frame.height
+                        duration = (float(frame.duration * frame.time_base)
+                                    if frame.duration and frame.time_base else stat["frame_duration"])
+                        if duration > 0:
+                            stat["frame_duration"] = max(stat["frame_duration"], duration)
+                        if frame.pts is not None and frame.time_base is not None:
+                            timestamp = float(frame.pts * frame.time_base)
+                            stat["first"] = timestamp if stat["first"] is None else min(stat["first"], timestamp)
+                            end = timestamp + max(0.0, duration)
+                            stat["last_end"] = end if stat["last_end"] is None else max(stat["last_end"], end)
+                durations = {}
+                for stream in videos:
+                    stat = stats[stream.index]
+                    if not stat["frames"]:
+                        raise ValueError("视频流未能解码出完整画面")
+                    if stream.frames and stat["frames"] != stream.frames:
+                        raise ValueError("视频解码帧数与容器声明不一致，文件可能被截断")
+                    decoded_duration = (stat["last_end"] - stat["first"]
+                                        if stat["first"] is not None and stat["last_end"] is not None
+                                        else stat["frames"] * stat["frame_duration"])
+                    declared_duration = (float(stream.duration * stream.time_base)
+                                         if stream.duration and stream.time_base else 0.0)
+                    if not declared_duration and len(videos) == 1 and not container.streams.audio and container.duration:
+                        declared_duration = float(container.duration) / av.time_base
+                    tolerance = max(0.05, 2 * stat["frame_duration"])
+                    if declared_duration > 0 and decoded_duration > 0 and decoded_duration + tolerance < declared_duration:
+                        raise ValueError("视频未解码到声明的结尾，文件可能被截断")
+                    duration = declared_duration or decoded_duration
+                    if not math.isfinite(duration) or duration <= 0:
+                        raise ValueError("不能确认有效的视频时长")
+                    durations[stream.index] = duration
+                bad_log = re.compile(r"truncat|premature|corrupt|partial file|invalid data|error.{0,20}decod", re.I)
+                if any(level <= av.logging.ERROR or bad_log.search(message) for level, _, message in logs):
+                    raise ValueError("解码器报告视频损坏或内容不完整")
+                primary = videos[0]
+                primary_stat = stats[primary.index]
+                result = {
+                    "path": str(target), "format": video_format, "media_type": "video",
+                    "width": primary_stat["width"], "height": primary_stat["height"],
+                    "duration_seconds": round(durations[primary.index], 6),
+                    "decoded_frames": primary_stat["frames"], "video_streams": len(videos),
+                    "codec": primary.codec_context.name,
+                }
+        final_stat = target.stat()
+        if (initial_stat.st_size, initial_stat.st_mtime_ns) != (final_stat.st_size, final_stat.st_mtime_ns):
+            raise ValueError("视频在校验期间发生变化")
+        digest = hashlib.sha256()
+        with target.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        result.update(size_bytes=final_stat.st_size, sha256=digest.hexdigest())
+        return result
+    except (OSError, EOFError, ValueError, av.error.FFmpegError) as exc:
+        raise ValueError(f"视频校验失败：{target.name}：{exc}") from exc
+
+
+def verify_media(path: str | os.PathLike[str], media_type: str | None = None) -> dict[str, Any]:
+    """Validate the requested media type, or detect images/videos from content."""
+    if media_type is not None:
+        media_type = media_type.strip().lower()
+        if media_type not in {"image", "video"}:
+            raise ValueError("media_type 只能是 image、video 或 None")
+    if media_type == "image":
+        return {**verify_image(path), "media_type": "image"}
+    if media_type == "video":
+        return verify_video(path)
+    try:
+        with Image.open(path):
+            pass
+    except (OSError, ValueError):
+        return verify_video(path)
+    return {**verify_image(path), "media_type": "image"}

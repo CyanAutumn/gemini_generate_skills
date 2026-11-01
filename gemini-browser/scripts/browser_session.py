@@ -23,6 +23,7 @@ def emit(event: str, **fields) -> None:
 
 def redact(text: str) -> str:
     text = re.sub(r"(https?|socks5h?)://[^\s/@]+(?::[^\s/@]*)?@", r"\1://[redacted]@", text)
+    text = re.sub(r'(https?://[^\s?<>"\']+)\?[^\s<>"\']*', r'\1?[redacted]', text)
     text = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[email]", text)
     if ACCOUNT.search(text):
         return "Google Account [redacted]"

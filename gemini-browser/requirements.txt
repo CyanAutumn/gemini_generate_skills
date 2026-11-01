@@ -1,3 +1,4 @@
 cloakbrowser==0.5.10
 playwright==1.62.0
 Pillow==12.2.0
+av==18.0.0

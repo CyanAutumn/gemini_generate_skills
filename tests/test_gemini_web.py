@@ -45,6 +45,7 @@ class GeminiWebTests(unittest.TestCase):
 
     def generation_stubs(self, *, wait=None, cleanup=None):
         stack = ExitStack()
+        self.page.locator.return_value.count.return_value = 0
 
         def new_chat(record):
             record.update(new_chat_verified=True, chat_policy="new_then_delete",
@@ -283,7 +284,7 @@ class GeminiWebTests(unittest.TestCase):
         for button in buttons:
             button.is_visible.return_value = True
         card.get_by_role.return_value.all.return_value = buttons
-        with self.assertRaisesRegex(RuntimeError, "没有找到原生下载按钮"):
+        with self.assertRaisesRegex(RuntimeError, "没有找到对应媒体的原生下载按钮"):
             self.driver._download(self.record, image)
         self.page.get_by_role.assert_not_called()
         self.page.expect_download.assert_not_called()

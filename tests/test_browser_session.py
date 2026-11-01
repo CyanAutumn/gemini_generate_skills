@@ -53,6 +53,13 @@ class BrowserSessionTests(unittest.TestCase):
         self.assertEqual(self.session.auth_state(), "loading")
         self.page.locator.assert_not_called()
 
+    def test_redact_removes_resource_url_queries_without_logging_the_secret(self):
+        secret = "private" + str(id(self))
+        resource = "https://example.invalid/generated-video.mp4"
+        filtered = browser_session.redact(f"Download failed: {resource}?token={secret}&signature={secret}")
+        self.assertFalse(secret in filtered, "资源URL查询参数必须脱敏")
+        self.assertTrue(resource in filtered, "保留无查询参数的资源路径以便定位错误")
+
     def test_snapshot_does_not_read_google_login_controls(self):
         self.page.url = "https://accounts.google.com/v3/signin/challenge/pwd"
         result = self.session.snapshot()

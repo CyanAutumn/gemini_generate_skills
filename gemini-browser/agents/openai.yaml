@@ -1,4 +1,4 @@
 interface:
-  display_name: "Gemini 网页图片生成"
-  short_description: "复用本地登录态，每次新建 Gemini 聊天生成并下载单张图片后删除该聊天"
-  default_prompt: "使用 $gemini-browser 新建 Gemini 聊天生成一张图片，下载到本地后删除这次聊天。"
+  display_name: "Gemini 网页图片与视频生成"
+  short_description: "用 Gemini 网页生成图片或参考图视频，下载校验后删除本次独立聊天"
+  default_prompt: "使用 $gemini-browser 根据我的提示词和参考图生成图片或视频，下载到本地后删除本次新建的聊天。"

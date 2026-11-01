@@ -7,6 +7,7 @@ python -m pip install -r gemini-browser/requirements.txt
 python gemini-browser/scripts/gemini_browser.py --help
 python gemini-browser/scripts/gemini_browser.py login --help
 python gemini-browser/scripts/gemini_browser.py image --help
+python gemini-browser/scripts/gemini_browser.py video --help
 python gemini-browser/scripts/gemini_browser.py result --help
 python gemini-browser/scripts/gemini_browser.py cleanup --help
 ```
@@ -34,9 +35,9 @@ Windows 默认 profile 位于 `%LOCALAPPDATA%/GeminiBrowserSkill/profiles/defaul
 python gemini-browser/scripts/gemini_browser.py status --proxy http://127.0.0.1:7897
 ```
 
-示例端口不保证适用于本机。也可通过环境变量 `GEMINI_BROWSER_PROXY` 提供地址；命令行 `--proxy` 优先。代理只传给专用浏览器，不修改系统代理，工具不会自动探测或强制使用代理。后续 `login`、`image`、`cleanup` 应沿用所需连接方式。连接超时不能证明登录失效或图片任务未提交，已创建任务仍按任务记录处理。
+示例端口不保证适用于本机。也可通过环境变量 `GEMINI_BROWSER_PROXY` 提供地址；命令行 `--proxy` 优先。代理只传给专用浏览器，不修改系统代理，工具不会自动探测或强制使用代理。后续 `login`、`image`、`video`、`cleanup` 应沿用所需连接方式。连接超时不能证明登录失效或生成任务未提交，已创建任务仍按任务记录处理。
 
-## 单张图片
+## 文生图与图生图
 
 ```powershell
 python gemini-browser/scripts/gemini_browser.py image --prompt "生成一张水彩插画：一只橘猫坐在窗边，窗外是雨后的花园，柔和晨光，横向构图，无文字" --timeout 300
@@ -48,9 +49,31 @@ python gemini-browser/scripts/gemini_browser.py image --prompt "生成一张水�
 python gemini-browser/scripts/gemini_browser.py image --prompt-file prompt.txt --output-dir outputs --timeout 300
 ```
 
-每个 `image` 任务确认新建独立聊天后提交一次请求，等待生成、原生下载并校验本地图片，结束时删除本次聊天。不复用旧聊天继续生成或下载。输出目录默认项目的 `outputs`；预览截图不能替代下载结果。完整成功要求图片校验通过且 `chat_cleanup` 确认删除完成；图片已保存但删除失败时只能报告部分完成，并补删聊天。
+图生图在同一条命令中添加参考图片；`--reference` 可重复，每个参数对应一个本地图片文件。工具先校验文件，再上传至当前新任务；多张参考图用于同一张结果，不是批量生成。
 
-`--profile`、`--data-dir`、`--output-dir`、`--proxy` 可写在子命令前或后。后续查看结果或补删时沿用原输出目录，补删还需沿用原数据目录和 profile。`image` 的 `--timeout` 控制生成等待时间；连接页面、登录等待、下载和清理另计，首次登录最多另外等待 900 秒。
+```powershell
+python gemini-browser/scripts/gemini_browser.py image --reference "reference.png" --prompt "保留参考图的角色与构图，改成柔和的水彩风格"
+python gemini-browser/scripts/gemini_browser.py image --reference "character.png" --reference "scene.jpg" --prompt-file prompt.txt
+```
+
+## 图生视频
+
+`video` 要求至少一张参考图片，`--reference` 可重复；提示词同样用 `--prompt` 或 `--prompt-file` 二选一。默认生成等待时间为 600 秒，可用 `--timeout` 调整；这不是成片时长设置。
+
+```powershell
+python gemini-browser/scripts/gemini_browser.py video --reference "reference.png" --prompt "让参考图中的猫轻轻转头，窗外叶片随风摇动，镜头缓慢推进，保持原有水彩风格" --timeout 600
+python gemini-browser/scripts/gemini_browser.py video --reference "character.png" --reference "scene.jpg" --prompt-file video-prompt.txt
+```
+
+实际顺序是新建聊天、先上传参考图、再选择可用的视频工具；首次使用可能出现 Omni 介绍弹窗，需处理当前可见弹窗后继续。发送前重新检查附件预览完整，并执行不触发提交的可点击检查（trial），确认发送按钮无遮挡后只提交一次。未找到视频工具入口时，可使用明确的视频提示词请求生成，但普通文字回复、静态图片或参考图预览都不能算视频成功。视频通过网页原生下载项保存，部分界面位于 Share → Download video；只保存本地文件，不发布到其他平台。
+
+[Google 的 Gemini Apps 视频帮助](https://support.google.com/gemini/answer/16126339?co=GENIE.Platform%3DDesktop&hl=en)目前说明最多可上传 5 张图片，生成可能需要数分钟，具体数量与功能仍以账号实际页面为准。该帮助未承诺固定成片秒数，不沿用旧教程的固定时长或每日次数；以当前页面与下载文件的实际结果报告。个人账号的视频功能需要 Google AI 计划及相应年龄资格，工作或学校账号需要合格许可证；没有权限或额度时明确报告并停止。
+
+## 每任务新聊天、下载与删除
+
+每个 `image` 或 `video` 任务确认新建独立聊天；仅在已确认空白的本次专用聊天内清除残留草稿和附件，再上传本次参考图、切换图片或视频工具，发送前重查附件预览和按钮可点击状态，只提交一次。随后等待生成、原生下载并校验本地媒体，结束时删除本次聊天。不复用旧聊天继续生成或下载。输出目录默认项目的 `outputs`；页面截图、上传预览不能替代下载结果。完整成功要求媒体校验通过且 `chat_cleanup` 确认删除完成；文件已保存但删除失败时只能报告部分完成，并补删聊天。
+
+`--profile`、`--data-dir`、`--output-dir`、`--proxy` 可写在子命令前或后。后续查看结果或补删时沿用原输出目录，补删还需沿用原数据目录和 profile。`image` 默认生成等待 300 秒，`video` 默认 600 秒；连接页面、登录等待、上传、下载和清理另计，首次登录最多另外等待 900 秒。
 
 ## 查看本地结果与补删聊天
 
@@ -59,11 +82,11 @@ python gemini-browser/scripts/gemini_browser.py result RUN_ID
 python gemini-browser/scripts/gemini_browser.py cleanup RUN_ID
 ```
 
-把 `RUN_ID` 替换为工具返回的任务 ID。`result` 只重新校验本地已保存图片并返回实际文件，不打开浏览器；缺失或损坏时报告校验错误，不重新生成或恢复网页下载。本地图片和任务记录会保留，删除网页聊天不会删除它们。
+把 `RUN_ID` 替换为工具返回的任务 ID。`result` 只重新校验本地已保存图片或视频并返回实际文件，不打开浏览器；缺失或损坏时报告校验错误，不重新生成或恢复网页下载。本地媒体和任务记录会保留，删除网页聊天不会删除它们。
 
-`cleanup` 仅补删该任务记录指向的聊天，不生成图片、不继续下载。默认只操作本工具确认新建并记录的任务聊天，不清空历史记录或其他聊天；用户已授权每任务结束删除，无需重复确认。无法唯一确认目标时停止，按任务记录人工核对，不猜测删除对象。
+`cleanup` 仅补删该任务记录指向的聊天，不生成媒体、不继续下载。默认只操作本工具确认新建并记录的任务聊天，不清空历史记录或其他聊天；用户已授权每任务结束删除，无需重复确认。无法唯一确认目标时停止，按任务记录人工核对，不猜测删除对象。
 
-正常失败和 Ctrl+C 退出也会尝试删除聊天；外部强杀、断网、登录失效或页面变化可能导致删除失败。独立字段 `chat_cleanup` 记录清理状态，不能用“图片已生成”替代删除确认；清理失败会明确报告并保留任务 ID，待网络、登录或页面问题解决后用 `cleanup` 补删。程序崩溃时不能保证即时删除。
+正常失败和 Ctrl+C 退出也会尝试删除聊天；外部强杀、断网、登录失效或页面变化可能导致删除失败。独立字段 `chat_cleanup` 记录清理状态，不能用“媒体已生成”替代删除确认；清理失败会明确报告并保留任务 ID，待网络、登录或页面问题解决后用 `cleanup` 补删。程序崩溃时不能保证即时删除。
 
 网页删除方式以[Google 官方帮助](https://support.google.com/gemini/answer/13666746?co=GENIE.Platform%3DDesktop&hl=en)为准：在侧栏准确目标聊天的 More 菜单选择 Delete。删除能力受账号权限影响，工作或学校账号可能无法删除；无法确认删除完成时报告清理失败。
 
@@ -75,15 +98,20 @@ python gemini-browser/scripts/gemini_browser.py cleanup RUN_ID
 - 已提交但超时：保留任务 ID 并核对清理状态，不盲目再次生成；清理失败时使用 `cleanup` 补删。
 - 多条模型回复或下载目标不唯一：停止自动下载并尝试清理该任务聊天，报告实际状态。
 - 页面入口变化：依据工具反馈检查实际入口；无法定位时报告阻塞位置，不假装已提交。
-- 成功：本地图片校验通过且 `chat_cleanup` 已确认删除，交付文件及实际保存位置。图片已保存但清理失败时说明剩余事项；仅通过帮助、语法或离线检查不能证明网页链路跑通。
+- 成功：本地媒体校验通过且 `chat_cleanup` 已确认删除，交付文件及实际保存位置。文件已保存但清理失败时说明剩余事项；仅通过帮助、语法或离线检查不能证明网页链路跑通。
 
-当前尚未实现视频和批量生成。网页路线不产生 Gemini API 调用费用，账号订阅、功能权限和网页额度仍适用。
+当前不支持批量生成，也不接受视频文件作为参考输入。网页路线不产生 Gemini API 调用费用，账号订阅、功能权限和网页额度仍适用；不硬编码额度，按页面限制及恢复时间处理。
 
-2026-11-01 已在本机 Windows 验证登录态重启复用，以及“明确新建空白聊天 → 单次图片请求 → 原生下载与 Pillow 校验 → 删除 → 网页明确提示聊天不存在”的完整流程。普通输入框的明确图片请求（`prompt_request`）可正常生成；本次图片为 2752 × 1536 JPEG，本地文件在聊天删除后仍有效。另有两次连续独立任务的本地真实浏览器测试，确认各任务分别删除、无关聊天保留。实测对应当时本机账号与页面状态，每次仍以工具的图片校验和 `chat_cleanup` 确认结果为准。
+2026-11-01 已在本机 Windows 验证登录态重启复用，以及“明确新建空白聊天 → 单次文生图请求 → 原生下载与 Pillow 校验 → 删除 → 网页明确提示聊天不存在”的完整流程。普通输入框的明确图片请求（`prompt_request`）可正常生成，本地文件在聊天删除后仍有效；另有两次连续独立任务的本地真实浏览器测试，确认各任务分别删除、无关聊天保留。
+
+同日图生图实测也已完成：参考图中的蓝色杯子按提示变为绿色杯子与暖夕阳光线；工具确认参考图上传，使用图片工具模式（`tools_image_mode`），下载 2752 × 1536 JPEG，通过 Pillow 校验与视觉核对，并在删除后取得 `chat_not_found` 证据。
+
+同日图生视频已完成真实全流程：确认参考图上传，使用视频工具模式（`tools_video_mode`），原生下载 MP4/H.264（1280 × 720，10.0 秒，4,592,406 字节）；PyAV 完整解码校验 240 帧通过，聊天删除后取得 `chat_not_found` 证据，命令成功退出。首次 Omni 介绍弹窗及发送前遮挡检查已适配。10 秒仅为本次结果，后续任务仍以实际下载文件的校验结果及 `chat_cleanup` 删除确认为准，不承诺固定时长或所有账号均可生成。
 
 ## 官方参考
 
 - [CloakBrowser 官方仓库](https://github.com/CloakHQ/CloakBrowser)：浏览器库及持久化配置，以当前所装版本为准。
 - [Gemini 登录要求](https://support.google.com/gemini/answer/13278668?hl=en)：账号资格与登录入口。
 - [图片生成、编辑与下载](https://support.google.com/gemini/answer/14286560?co=GENIE.Platform%3DDesktop&hl=en)：网页图片功能及原尺寸下载。
+- [视频生成与下载](https://support.google.com/gemini/answer/16126339?co=GENIE.Platform%3DDesktop&hl=en)：Gemini Apps 的参考图视频流程，不是 Gemini API 或 Flow。
 - [Gemini Apps 功能与额度](https://support.google.com/gemini/answer/16275805?hl=en)：功能权限与使用限制。
