@@ -10,7 +10,23 @@ python gemini-browser/scripts/gemini_browser.py image --help
 python gemini-browser/scripts/gemini_browser.py video --help
 python gemini-browser/scripts/gemini_browser.py result --help
 python gemini-browser/scripts/gemini_browser.py cleanup --help
+python gemini-browser/scripts/gemini_browser.py workflow --help
 ```
+
+## 创建和调用固定工作流
+
+需要保存固定提示词、素材、变量及顺序步骤时，读取 [工作流说明](workflows.md)。提供的 [product-demo 示例](../examples/workflows/product-demo/workflow.json)依次执行图生图和图生视频，第二步引用第一步的图片；先通过本地校验与计划，再运行：
+
+```powershell
+python gemini-browser/scripts/gemini_browser.py workflow create product-demo --spec gemini-browser/examples/workflows/product-demo/workflow.json
+python gemini-browser/scripts/gemini_browser.py workflow validate product-demo
+python gemini-browser/scripts/gemini_browser.py workflow plan product-demo --set "subject=陶瓷咖啡杯"
+python gemini-browser/scripts/gemini_browser.py workflow run product-demo --set "subject=陶瓷咖啡杯"
+```
+
+默认工作流注册目录是当前工作目录下的 `workflows`，可用 `--workflows-dir` 指定。创建会复制提示词和素材，形成可搬移的包；同名流程已存在时不会覆盖。`workflow result RUN_ID` 只查询本地工作流结果。详细变量规则、完整规范、便捷创建及步骤补删方法见工作流说明。
+
+创建、列表、展示、校验、计划与 `run --dry-run` 不打开浏览器。实际运行仍需要本机文件、浏览器与登录权限；工作流固定步骤和约束，不保证每次像素相同。下面已通过的单图和单视频实测不等于完整工作流已经实测成功。
 
 ## 登录与状态
 

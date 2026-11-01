@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "name": "product-demo",
+  "description": "根据参考图生成产品图片，再用该图片生成展示视频",
+  "variables": {
+    "subject": null,
+    "color": "浅绿色",
+    "motion": "镜头缓慢推进，杯口热气轻轻上升"
+  },
+  "steps": [
+    {
+      "id": "image",
+      "type": "image",
+      "prompt_file": "prompts/image.txt",
+      "references": ["assets/sample.jpg"]
+    },
+    {
+      "id": "video",
+      "type": "video",
+      "prompt_file": "prompts/video.txt",
+      "references": [
+        {
+          "step": "image",
+          "file_index": 0
+        }
+      ]
+    }
+  ]
+}

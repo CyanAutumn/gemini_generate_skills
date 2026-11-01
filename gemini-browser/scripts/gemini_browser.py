@@ -26,6 +26,9 @@ def common(parser, *, root=False):
                         help="图片、视频及任务记录输出目录")
     parser.add_argument("--proxy", default=os.environ.get("GEMINI_BROWSER_PROXY") if root else argparse.SUPPRESS,
                         help="仅本浏览器使用的代理地址，也可设置 GEMINI_BROWSER_PROXY")
+    parser.add_argument("--workflows-dir", type=Path,
+                        default=Path.cwd() / "workflows" if root else argparse.SUPPRESS,
+                        help="工作流库，默认当前工作目录的 workflows")
 
 
 def parser_for_cli():
@@ -57,6 +60,10 @@ def parser_for_cli():
     cleanup = commands.add_parser("cleanup", help="仅删除指定任务聊天，不生成图片")
     common(cleanup)
     cleanup.add_argument("run_id")
+    workflow = commands.add_parser("workflow", help="创建、预览和执行固定参考图工作流")
+    common(workflow)
+    from workflow_cli import add_workflow_commands
+    add_workflow_commands(workflow, common)
     return parser
 
 
@@ -72,6 +79,10 @@ def main(argv=None):
         parser.error("--timeout 必须大于 0")
     args.data_dir = args.data_dir.expanduser().resolve()
     args.output_dir = args.output_dir.expanduser().resolve()
+    args.workflows_dir = args.workflows_dir.expanduser().resolve()
+    if args.command == "workflow":
+        from workflow_cli import execute_workflow_command
+        return execute_workflow_command(args)
     profile = args.data_dir / "profiles" / args.profile
     record = None
     store = RunStore(args.output_dir)

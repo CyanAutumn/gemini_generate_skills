@@ -1,4 +1,4 @@
 interface:
-  display_name: "Gemini 网页图片与视频生成"
-  short_description: "用 Gemini 网页生成图片或参考图视频，下载校验后删除本次独立聊天"
-  default_prompt: "使用 $gemini-browser 根据我的提示词和参考图生成图片或视频，下载到本地后删除本次新建的聊天。"
+  display_name: "Gemini 网页生成与固定工作流"
+  short_description: "创建和调用图片、视频固定工作流，每步下载校验后删除本次独立聊天"
+  default_prompt: "使用 $gemini-browser 把我的提示词、参考图和生成步骤整理为固定工作流，先检查执行计划，再按参数运行。"
